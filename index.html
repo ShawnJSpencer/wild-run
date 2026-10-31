@@ -122,6 +122,10 @@ section{display:flex;flex-direction:column;gap:12px}
 .whobtn{all:unset;cursor:pointer;font-size:13px;font-weight:800;padding:7px 12px;border-radius:99px;background:var(--moss);border:2px solid var(--pc,var(--moss-2));white-space:nowrap}
 .whobtn b{color:var(--pc)}
 .whobtn:focus-visible{outline:3px solid var(--sun)}
+.card.locked .nm{color:var(--muted)}
+.gold{color:var(--sun)}
+.btn[disabled]{opacity:.45;cursor:default;box-shadow:none}
+.card .ds{font-size:13px;color:var(--muted);line-height:1.35}
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
 .head>div{min-width:0;flex:1 1 260px}
 .syncbtn{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:800;padding:7px 12px;border-radius:99px;background:var(--moss);border:2px solid var(--moss-2);white-space:nowrap}
@@ -150,6 +154,14 @@ section{display:flex;flex-direction:column;gap:12px}
     <div class="row" style="align-items:center"><button class="whobtn" id="whoBtn" hidden>Playing as <b></b> · Switch</button><button class="syncbtn off" id="syncBtn"><span>Sync iPhone + iPad</span></button></div>
   </header>
 
+  <div class="sheet" id="hatchSheet" hidden>
+    <div class="sbox" style="align-items:center;text-align:center">
+      <canvas id="hatchCv" width="480" height="320" style="width:100%;border-radius:12px;display:block"></canvas>
+      <h2 id="hatchMsg" style="color:var(--sun)"></h2>
+      <button class="btn big" id="hatchGo" hidden>Meet your new runner</button>
+    </div>
+  </div>
+
   <div class="sheet" id="syncSheet" hidden>
     <div class="sbox" role="dialog" aria-label="Sync settings">
       <h2 style="color:var(--sun)">Sync your runners</h2>
@@ -176,10 +188,18 @@ section{display:flex;flex-direction:column;gap:12px}
     <div class="pgrid" id="whoGrid"></div>
   </section>
 
+  <!-- FIRST RUNNER -->
+  <section id="vStart" hidden>
+    <h2 id="startTitle"></h2>
+    <p class="tag" style="margin:0">Your first runner is free. Earn stars on the world map to hatch eggs for the others.</p>
+    <div class="grid" id="startGrid"></div>
+  </section>
+
   <!-- PETS -->
-  <section id="vHome">
+  <section id="vHome" hidden>
+    <div class="info" id="nest"></div>
     <div class="grid" id="grid"></div>
-    <p class="how"><b>How it works:</b> every runner starts as a baby. Keep them fed, watered and happy, train their special power, and run courses to earn XP. They grow from <b>Baby</b> to <b>Young</b> to <b>Grown</b> as they level up.</p>
+    <p class="how"><b>How it works:</b> every runner starts as a baby. Stars you collect on courses buy mystery eggs for new runners. Keep them fed, watered and happy, train their special power, and run courses to earn XP. They grow from <b>Baby</b> to <b>Young</b> to <b>Grown</b> as they level up.</p>
   </section>
 
   <!-- PET HUB -->
@@ -284,6 +304,9 @@ const newPet=()=>({xp:0,food:70,water:70,joy:70,energy:100,skill:0,pts:0,last:Da
 function fillPlayer(P){
   if(!P.pets)P.pets={};if(!P.unlocked)P.unlocked=1;if(!P.best)P.best={};
   ORDER.forEach(k=>{if(!P.pets[k])P.pets[k]=newPet()});
+  // runners already raised before eggs existed count as owned
+  if(!Array.isArray(P.owned))P.owned=ORDER.filter(k=>P.pets[k].u||P.pets[k].xp>0);
+  if(typeof P.stars!=="number")P.stars=0;if(!P.su)P.su=0;
   return P;
 }
 function loadSave(){
@@ -298,6 +321,9 @@ function loadSave(){
   D=ALL.players.dad;
   decayAll();
 }
+const EGG_PRICE=[0,40,70,100];
+const eggPrice=()=>EGG_PRICE[Math.min(D.owned.length,3)];
+const owns=k=>D.owned.includes(k);
 function usePlayer(id){who=id;D=ALL.players[id];try{localStorage.setItem("wildrun.player",id)}catch(e){}}
 function save(){try{localStorage.setItem(SKEY,JSON.stringify(ALL))}catch(e){}if(Sync)Sync.soon();}
 function touch(k){D.pets[k].u=Date.now();}
@@ -423,27 +449,73 @@ function drawAvatar(c,k,t,air,glide,st,shieldR){
 function scaleOf(st){return [0.62,0.82,1][st]}
 
 /* ================= views ================= */
-const V={who:vWho,home:vHome,pet:vPet,map:vMap,play:vPlay};
+const V={who:vWho,start:vStart,home:vHome,pet:vPet,map:vMap,play:vPlay};
 let view="home",cur="bear";
 function show(v){view=v;for(const k in V)V[k].hidden=(k!==v);
   const pl=PLAYERS.find(x=>x.id===who),b=document.getElementById("whoBtn");
   b.hidden=(v==="who"||v==="play"||!pl);if(pl){b.querySelector("b").textContent=pl.name;b.style.setProperty("--pc",pl.col);}
   window.scrollTo(0,0);}
+/* first runner */
+const startGrid=document.getElementById("startGrid"),startPics=[];
+const BLURB={bear:"Strong and tough. Learns to smash through obstacles.",raptor:"Fast and bouncy. Learns to jump super high.",spartan:"Brave and steady. Forges a shield that blocks crashes.",hawk:"Light and quick. Learns to glide and fly."};
+function buildStart(){
+  const pl=PLAYERS.find(x=>x.id===who);
+  document.getElementById("startTitle").textContent="Pick your first runner, "+pl.name+"!";
+  startGrid.innerHTML="";startPics.length=0;
+  ORDER.forEach(k=>{
+    const b=document.createElement("button");b.className="card";
+    b.innerHTML=`<canvas width="320" height="240"></canvas><span class="nm">${AV[k].name}</span><span class="chip">${AV[k].power}</span><span class="ds">${BLURB[k]}</span>`;
+    b.onclick=()=>{if(D.owned.length)return;D.owned=[k];D.pets[k]=newPet();touch(k);save();openPet(k);setMsg("Say hi to your new baby "+AV[k].name+"!");};
+    startGrid.appendChild(b);startPics.push({k,st:0,r:0,c:b.querySelector("canvas").getContext("2d")});
+  });
+}
+let hatch=null;
+const hatchCv=document.getElementById("hatchCv"),hctx=hatchCv.getContext("2d");
+function buyEgg(){
+  const left=ORDER.filter(k=>!owns(k)),price=eggPrice();
+  if(!left.length||D.stars<price)return;
+  const k=left[Math.floor(Math.random()*left.length)];
+  D.stars-=price;D.su=Date.now();D.owned.push(k);D.pets[k]=newPet();touch(k);save();
+  hatch={k,t:0};
+  document.getElementById("hatchMsg").textContent="Something is moving…";
+  document.getElementById("hatchGo").hidden=true;
+  document.getElementById("hatchSheet").hidden=false;
+}
+document.getElementById("hatchGo").onclick=()=>{const k=hatch.k;hatch=null;document.getElementById("hatchSheet").hidden=true;openPet(k);setMsg("Say hi to your new baby "+AV[k].name+"!");};
+function drawHatch(dt){
+  if(!hatch)return;hatch.t+=dt;const t=hatch.t,c=hctx;
+  c.setTransform(1,0,0,1,0,0);sceneBg(c,480,320,270);
+  drawNest(c,240,272,1.6);
+  if(t<2.4){
+    const amp=Math.min(1,t/1.6)*0.18,wob=Math.sin(t*(10+t*8))*amp;
+    drawEgg(c,240,268,1.9,wob,t>1.2?(t-1.2)/1.2:0);
+  } else {
+    const u=Math.min(1,(t-2.4)/0.5);
+    c.save();c.translate(240-60*u,250-40*u+60*u*u);c.rotate(-1.2*u);c.scale(1.9,1.9);c.fillStyle="#fbf3dc";c.beginPath();c.ellipse(0,-34,26,34,0,Math.PI,Math.PI*2);c.fill();c.restore();
+    c.save();c.translate(240,272);c.scale(3.4*0.62,3.4*0.62);drawAvatar(c,hatch.k,0,false,false,0,0);c.restore();
+    for(let i=0;i<10;i++){const a=i/10*Math.PI*2+t;starShapeC(c,240+Math.cos(a)*(150+10*Math.sin(t*3+i)),150+Math.sin(a)*90,7,"#ffd23f");}
+    if(document.getElementById("hatchGo").hidden){
+      document.getElementById("hatchMsg").textContent="It's a baby "+AV[hatch.k].name+"!";
+      document.getElementById("hatchGo").hidden=false;
+    }
+  }
+}
+function starShapeC(c,x,y,r,col){c.fillStyle=col;c.beginPath();for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,rad=i%2?r*0.45:r;c.lineTo(x+Math.cos(a)*rad,y+Math.sin(a)*rad);}c.closePath();c.fill();}
 /* player picker */
 const whoGrid=document.getElementById("whoGrid"),whoPics=[];
 function buildWho(){
   whoGrid.innerHTML="";whoPics.length=0;let lastP="";try{lastP=localStorage.getItem("wildrun.player")||""}catch(e){}
   PLAYERS.forEach(pl=>{
-    const P=ALL.players[pl.id],top=Math.max(...ORDER.map(k=>levelOf(P.pets[k].xp)));
+    const P=ALL.players[pl.id],top=P.owned.length?Math.max(...P.owned.map(k=>levelOf(P.pets[k].xp))):0;
     const b=document.createElement("button");b.className="pcard"+(pl.id===lastP?" last":"");b.style.setProperty("--pc",pl.col);
-    b.innerHTML=`<span class="pname">${pl.name}</span><canvas width="480" height="150"></canvas><span class="psub">Best runner: Lv ${top} · Courses open: ${P.unlocked}</span>`;
-    b.onclick=()=>{usePlayer(pl.id);buildHome();show("home");};
+    b.innerHTML=`<span class="pname">${pl.name}</span><canvas width="480" height="150"></canvas><span class="psub">${P.owned.length?`${P.owned.length} of 4 runners · Best Lv ${top} · ★ ${P.stars}`:"New player: pick your first runner"}</span>`;
+    b.onclick=()=>{usePlayer(pl.id);if(!D.owned.length){buildStart();show("start")}else{buildHome();show("home")}};
     whoGrid.appendChild(b);whoPics.push({P,c:b.querySelector("canvas").getContext("2d")});
   });
 }
 function drawWho(){
   whoPics.forEach(w=>{const c=w.c;c.setTransform(1,0,0,1,0,0);sceneBg(c,480,150,128);
-    ORDER.forEach((k,i)=>{const p=w.P.pets[k],st=stageOf(levelOf(p.xp)),s=1.55*scaleOf(st);c.setTransform(s,0,0,s,70+i*114,132);drawAvatar(c,k,0,false,false,st,k==="spartan"?p.skill:0);});
+    ORDER.forEach((k,i)=>{if(!w.P.owned.includes(k)){c.setTransform(1,0,0,1,0,0);drawEgg(c,70+i*114,128,0.75,0,0);return}const p=w.P.pets[k],st=stageOf(levelOf(p.xp)),s=1.55*scaleOf(st);c.setTransform(s,0,0,s,70+i*114,132);drawAvatar(c,k,0,false,false,st,k==="spartan"?p.skill:0);});
     c.setTransform(1,0,0,1,0,0);});
 }
 
@@ -451,9 +523,23 @@ function drawWho(){
 const grid=document.getElementById("grid"),portraits=[];
 function barRow(lbl,v,col){return `<span>${lbl}</span><div class="bar"><i style="width:${Math.round(v)}%;background:${col}"></i></div>`}
 function needText(p){const n=[];if(p.food<30)n.push("hungry");if(p.water<30)n.push("thirsty");if(p.energy<20)n.push("sleepy");if(p.joy<30)n.push("bored");return n.length?"Feeling "+n.join(", ")+"!":""}
+function buildNest(){
+  const n=document.getElementById("nest"),all=D.owned.length>=4,price=eggPrice();
+  n.innerHTML=all?`<div class="t"><span class="nm">Egg Nest</span><p>Every runner has hatched. You have <b class="gold">★ ${D.stars}</b>.</p></div>`
+   :`<div class="t"><span class="nm">Egg Nest</span><p>You have <b class="gold">★ ${D.stars}</b>. Earn stars on the world map, then hatch a mystery egg for a runner you don't have yet.</p></div>
+     <button class="btn big" id="buyEgg" ${D.stars<price?"disabled":""}>Hatch egg · ★ ${price}</button>`;
+  const b=document.getElementById("buyEgg");if(b)b.onclick=buyEgg;
+}
 function buildHome(){
-  decayAll();grid.innerHTML="";portraits.length=0;
+  decayAll();grid.innerHTML="";portraits.length=0;buildNest();
   ORDER.forEach(k=>{
+    if(!owns(k)){
+      const b=document.createElement("button");b.className="card locked";b.id="pick-"+k;
+      b.innerHTML=`<canvas width="320" height="240"></canvas><span class="nm">???</span><span class="chip">Not hatched</span><span class="need" style="color:var(--muted)">Hatch an egg to find out who's inside.</span>`;
+      b.onclick=()=>document.getElementById("nest").scrollIntoView({behavior:"smooth",block:"center"});
+      grid.appendChild(b);portraits.push({k,locked:true,c:b.querySelector("canvas").getContext("2d")});
+      return;
+    }
     const p=D.pets[k],lv=levelOf(p.xp),st=stageOf(lv);
     const b=document.createElement("button");b.className="card";b.id="pick-"+k;
     b.innerHTML=`<canvas width="320" height="240"></canvas><span class="nm">${AV[k].name}</span><span class="chip">${STAGES[st]} · Lv ${lv}</span><div class="mini">${barRow("Food",p.food,"var(--leaf)")}${barRow("Water",p.water,"var(--water)")}</div><span class="need">${needText(p)}</span>`;
@@ -461,13 +547,29 @@ function buildHome(){
     portraits.push({k,st,r:p.skill,c:b.querySelector("canvas").getContext("2d")});
   });
 }
+function drawEgg(c,x,y,s,wob,crack){
+  c.save();c.translate(x,y);c.rotate(wob||0);c.scale(s,s);
+  ell(c,0,4,30,8,0,"rgba(0,0,0,.15)");
+  ell(c,0,-34,26,34,0,"#fbf3dc");
+  circ(c,-9,-48,5,"#7fb6e8");circ(c,10,-30,6,"#ffb53b");circ(c,-12,-20,4,"#7fd16a");circ(c,8,-56,3.5,"#ff7fb0");circ(c,14,-14,3,"#7fb6e8");
+  if(crack)line(c,[-22,-38,-12,-30,-4,-40,4,-30,12,-40,22,-32].slice(0,2*Math.max(2,Math.round(6*Math.min(1,crack)))),2.5,"#8a6a3a");
+  c.restore();
+}
+function drawNest(c,x,y,s){
+  c.save();c.translate(x,y);c.scale(s,s);
+  ell(c,0,0,52,16,0,"#7a4f2a");
+  for(let i=0;i<9;i++)line(c,[-48+i*12,-6+(i%2)*6,-36+i*12,4-(i%2)*6],3,"#a0703f");
+  c.restore();
+}
 function sceneBg(c,W,H,gy){
   const g=c.createLinearGradient(0,0,0,gy);g.addColorStop(0,"#5fb3e8");g.addColorStop(1,"#d4f0fc");c.fillStyle=g;c.fillRect(0,0,W,gy);
   c.fillStyle="#6cc04f";c.fillRect(0,gy,W,H-gy);c.fillStyle="#5aa841";c.fillRect(0,gy,W,4);
 }
-function drawPortraits(t){
-  portraits.forEach((p,i)=>{
+function drawPortraits(t){drawPics(portraits,t)}
+function drawPics(list,t){
+  list.forEach((p,i)=>{
     const c=p.c;c.setTransform(1,0,0,1,0,0);sceneBg(c,320,240,200);
+    if(p.locked){drawNest(c,160,200,1.5);drawEgg(c,160,198,1.45,Math.sin(t*3+i)*0.04,0);c.fillStyle="#8a6a3a";c.font="40px "+FONT;c.textAlign="center";c.fillText("?",160,160);return;}
     const s=2.9*scaleOf(p.st);c.setTransform(s,0,0,s,160,205);
     drawAvatar(c,p.k,0,false,false,p.st,p.k==="spartan"?p.r:0);
     c.setTransform(1,0,0,1,0,0);
@@ -771,10 +873,12 @@ function endRun(win){
   const ups=addXP(p,xp);
   let unlock="";
   if(win){const i=COURSES.indexOf(C);if(i+2>D.unlocked&&i+1<COURSES.length){D.unlocked=i+2;unlock="New course unlocked: "+COURSES[i+1].name+"!";}D.best[C.id]=Math.max(D.best[C.id]||0,S.got);}
+  D.stars+=S.got;D.su=Date.now();
   touch(S.k);save();
   const pct=Math.min(100,Math.round((S.cam+PX)/C.len*100));
   overlay.innerHTML=`<div class="panel"><h2>${win?"Finished!":"Out of hearts"}</h2>
    <p class="stat">${win?`★ ${S.got} / ${S.total} · ${S.time.toFixed(1)}s`:`Made it ${pct}% · ★ ${S.got}`} · +${xp} XP</p>
+   <p>${S.got?`+★ ${S.got} for eggs · You have ★ ${D.stars}`:""}</p>
    ${[...ups,unlock].filter(Boolean).map(u=>`<p class="up">${u}</p>`).join("")}
    <div class="row"><button class="btn" data-act="again">${win?"Run again":"Try again"}</button><button class="btn alt" data-act="map">Map</button><button class="btn alt" data-act="pet">Care</button></div></div>`;
   overlay.hidden=false;
@@ -905,8 +1009,10 @@ function frame(now){
   const dt=Math.min(0.05,(now-last)/1000);last=now;T+=dt;S.t=T;
   if(view==="play"&&S.a){if(S.state==="play"&&S.mode!=="forge")update(dt);updateFx(dt);draw();hud();}
   else if(view==="who")drawWho();
+  else if(view==="start")drawPics(startPics,T);
   else if(view==="home")drawPortraits(T);
   else if(view==="pet")drawPetScene(T);
+  if(hatch)drawHatch(dt);
   requestAnimationFrame(frame);
 }
 
@@ -934,6 +1040,11 @@ Sync=(()=>{
         if(r&&(r.u||0)>(L.u||0)){P.pets[k]=Object.assign({},r);changed=true;}
         else if(!r||(L.u||0)>(r.u||0))push=true;
       });
+      const ro=Array.isArray(RP.owned)?RP.owned:[];
+      ro.forEach(k=>{if(ORDER.includes(k)&&!P.owned.includes(k)){P.owned.push(k);changed=true}});
+      if(P.owned.some(k=>!ro.includes(k)))push=true;
+      const rsu=RP.su||0;
+      if(rsu>P.su){P.stars=RP.stars||0;P.su=rsu;changed=true}else if(P.su>rsu)push=true;
       const ru=RP.unlocked||1;
       if(ru>P.unlocked){P.unlocked=ru;changed=true}else if(P.unlocked>ru)push=true;
       const rb=RP.best||{};
@@ -978,7 +1089,7 @@ Sync=(()=>{
     busy=false;if(again){again=false;run()}
   }
   function refreshView(){
-    if(view==="who")buildWho();else if(view==="home")buildHome();else if(view==="pet")renderPet();else if(view==="map")buildMap();
+    if(view==="who")buildWho();else if(view==="start"){if(D.owned.length){buildHome();show("home")}else buildStart()}else if(view==="home")buildHome();else if(view==="pet")renderPet();else if(view==="map")buildMap();
   }
   function soon(){if(!token)return;clearTimeout(timer);timer=setTimeout(run,1500)}
   function ago(){const s=Math.round((Date.now()-lastOk)/1000);return s<20?"just now":s<3600?Math.round(s/60)+" min ago":"a while ago"}
