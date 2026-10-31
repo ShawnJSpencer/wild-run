@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Wild Run</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -24,7 +24,9 @@
 }
 [hidden]{display:none!important}
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;touch-action:manipulation}
+*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 body{margin:0;-webkit-tap-highlight-color:transparent}
 img{max-width:100%}
 html,body{height:100%}
@@ -972,6 +974,11 @@ document.getElementById("tokSave").onclick=async()=>{
 };
 document.getElementById("tokOff").onclick=()=>{Sync.setToken("");$sheet.hidden=true};
 
+/* no zooming or text selection from stray taps */
+document.addEventListener("dblclick",e=>e.preventDefault(),{passive:false});
+["gesturestart","gesturechange"].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+document.addEventListener("contextmenu",e=>{if(e.target.tagName!=="INPUT")e.preventDefault()});
+document.addEventListener("selectstart",e=>{if(e.target.tagName!=="INPUT")e.preventDefault()});
 loadSave();buildHome();Sync.paint();Sync.run();requestAnimationFrame(frame);
 </script>
 </body>
