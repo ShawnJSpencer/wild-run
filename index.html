@@ -111,6 +111,17 @@ section{display:flex;flex-direction:column;gap:12px}
 .how{background:var(--moss);border-radius:12px;padding:12px 14px;color:var(--muted);line-height:1.5;margin:0}
 .how b{color:var(--cream)}
 @media (prefers-reduced-motion:reduce){.card{transition:none}}
+.pgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media (max-width:560px){.pgrid{grid-template-columns:minmax(0,1fr)}}
+.pcard{all:unset;box-sizing:border-box;cursor:pointer;background:var(--moss);border:3px solid var(--moss-2);border-top:10px solid var(--pc);border-radius:16px;padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.pcard:hover,.pcard.last{border-color:var(--pc)}
+.pcard:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.pcard canvas{width:100%;aspect-ratio:16/5;border-radius:10px;display:block}
+.pname{font-family:var(--display);font-size:32px;line-height:1;color:var(--pc)}
+.psub{font-size:13px;color:var(--muted)}
+.whobtn{all:unset;cursor:pointer;font-size:13px;font-weight:800;padding:7px 12px;border-radius:99px;background:var(--moss);border:2px solid var(--pc,var(--moss-2));white-space:nowrap}
+.whobtn b{color:var(--pc)}
+.whobtn:focus-visible{outline:3px solid var(--sun)}
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
 .head>div{min-width:0;flex:1 1 260px}
 .syncbtn{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:800;padding:7px 12px;border-radius:99px;background:var(--moss);border:2px solid var(--moss-2);white-space:nowrap}
@@ -136,7 +147,7 @@ section{display:flex;flex-direction:column;gap:12px}
       <h1>Wild Run</h1>
       <p class="tag">Raise four baby runners. Feed them, train their powers, and race them across the world.</p>
     </div>
-    <button class="syncbtn off" id="syncBtn"><span>Sync iPhone + iPad</span></button>
+    <div class="row" style="align-items:center"><button class="whobtn" id="whoBtn" hidden>Playing as <b></b> · Switch</button><button class="syncbtn off" id="syncBtn"><span>Sync iPhone + iPad</span></button></div>
   </header>
 
   <div class="sheet" id="syncSheet" hidden>
@@ -158,6 +169,12 @@ section{display:flex;flex-direction:column;gap:12px}
       </div>
     </div>
   </div>
+
+  <!-- WHO -->
+  <section id="vWho" hidden>
+    <h2>Who's playing?</h2>
+    <div class="pgrid" id="whoGrid"></div>
+  </section>
 
   <!-- PETS -->
   <section id="vHome">
@@ -260,21 +277,35 @@ const COURSES=[
 ];
 
 /* ================= save ================= */
-const SKEY="wildrun-v2";
-let D;
+const SKEY="wildrun-v3",OLDKEY="wildrun-v2";
+const PLAYERS=[{id:"emma",name:"Emma",col:"#ff7fb0"},{id:"nora",name:"Nora",col:"#b48cff"},{id:"dad",name:"Dad",col:"#4fb3ff"},{id:"mom",name:"Mom",col:"#7fd16a"}];
+let ALL,D,who="";
+const newPet=()=>({xp:0,food:70,water:70,joy:70,energy:100,skill:0,pts:0,last:Date.now()});
+function fillPlayer(P){
+  if(!P.pets)P.pets={};if(!P.unlocked)P.unlocked=1;if(!P.best)P.best={};
+  ORDER.forEach(k=>{if(!P.pets[k])P.pets[k]=newPet()});
+  return P;
+}
 function loadSave(){
-  try{D=JSON.parse(localStorage.getItem(SKEY)||"null")}catch(e){D=null}
-  if(!D||!D.pets)D={pets:{},unlocked:1,best:{}};
-  ORDER.forEach(k=>{if(!D.pets[k])D.pets[k]={xp:0,food:70,water:70,joy:70,energy:100,skill:0,pts:0,last:Date.now()}});
+  try{ALL=JSON.parse(localStorage.getItem(SKEY)||"null")}catch(e){ALL=null}
+  if(!ALL||!ALL.players){
+    ALL={players:{}};
+    // runners raised before player accounts existed move to Dad
+    let old=null;try{old=JSON.parse(localStorage.getItem(OLDKEY)||"null")}catch(e){}
+    if(old&&old.pets)ALL.players.dad={pets:old.pets,unlocked:old.unlocked||1,best:old.best||{}};
+  }
+  PLAYERS.forEach(pl=>{ALL.players[pl.id]=fillPlayer(ALL.players[pl.id]||{})});
+  D=ALL.players.dad;
   decayAll();
 }
-function save(){try{localStorage.setItem(SKEY,JSON.stringify(D))}catch(e){}if(Sync)Sync.soon();}
+function usePlayer(id){who=id;D=ALL.players[id];try{localStorage.setItem("wildrun.player",id)}catch(e){}}
+function save(){try{localStorage.setItem(SKEY,JSON.stringify(ALL))}catch(e){}if(Sync)Sync.soon();}
 function touch(k){D.pets[k].u=Date.now();}
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function decayAll(){
   const now=Date.now();
-  ORDER.forEach(k=>{const p=D.pets[k],h=Math.max(0,(now-(p.last||now))/36e5);
-    p.food=clamp(p.food-4*h,0,100);p.water=clamp(p.water-6*h,0,100);p.joy=clamp(p.joy-3*h,0,100);p.energy=clamp(p.energy+8*h,0,100);p.last=now;});
+  PLAYERS.forEach(pl=>ORDER.forEach(k=>{const p=ALL.players[pl.id].pets[k],h=Math.max(0,(now-(p.last||now))/36e5);
+    p.food=clamp(p.food-4*h,0,100);p.water=clamp(p.water-6*h,0,100);p.joy=clamp(p.joy-3*h,0,100);p.energy=clamp(p.energy+8*h,0,100);p.last=now;}));
   save();
 }
 setInterval(()=>{if(D)decayAll()},60000);
@@ -392,9 +423,29 @@ function drawAvatar(c,k,t,air,glide,st,shieldR){
 function scaleOf(st){return [0.62,0.82,1][st]}
 
 /* ================= views ================= */
-const V={home:vHome,pet:vPet,map:vMap,play:vPlay};
+const V={who:vWho,home:vHome,pet:vPet,map:vMap,play:vPlay};
 let view="home",cur="bear";
-function show(v){view=v;for(const k in V)V[k].hidden=(k!==v);window.scrollTo(0,0);}
+function show(v){view=v;for(const k in V)V[k].hidden=(k!==v);
+  const pl=PLAYERS.find(x=>x.id===who),b=document.getElementById("whoBtn");
+  b.hidden=(v==="who"||v==="play"||!pl);if(pl){b.querySelector("b").textContent=pl.name;b.style.setProperty("--pc",pl.col);}
+  window.scrollTo(0,0);}
+/* player picker */
+const whoGrid=document.getElementById("whoGrid"),whoPics=[];
+function buildWho(){
+  whoGrid.innerHTML="";whoPics.length=0;let lastP="";try{lastP=localStorage.getItem("wildrun.player")||""}catch(e){}
+  PLAYERS.forEach(pl=>{
+    const P=ALL.players[pl.id],top=Math.max(...ORDER.map(k=>levelOf(P.pets[k].xp)));
+    const b=document.createElement("button");b.className="pcard"+(pl.id===lastP?" last":"");b.style.setProperty("--pc",pl.col);
+    b.innerHTML=`<span class="pname">${pl.name}</span><canvas width="480" height="150"></canvas><span class="psub">Best runner: Lv ${top} · Courses open: ${P.unlocked}</span>`;
+    b.onclick=()=>{usePlayer(pl.id);buildHome();show("home");};
+    whoGrid.appendChild(b);whoPics.push({P,c:b.querySelector("canvas").getContext("2d")});
+  });
+}
+function drawWho(){
+  whoPics.forEach(w=>{const c=w.c;c.setTransform(1,0,0,1,0,0);sceneBg(c,480,150,128);
+    ORDER.forEach((k,i)=>{const p=w.P.pets[k],st=stageOf(levelOf(p.xp)),s=1.55*scaleOf(st);c.setTransform(s,0,0,s,70+i*114,132);drawAvatar(c,k,0,false,false,st,k==="spartan"?p.skill:0);});
+    c.setTransform(1,0,0,1,0,0);});
+}
 
 /* home */
 const grid=document.getElementById("grid"),portraits=[];
@@ -460,6 +511,7 @@ document.getElementById("cWater").onclick=()=>care("water");
 document.getElementById("cPlay").onclick=()=>care("play");
 document.getElementById("cNap").onclick=()=>care("nap");
 document.getElementById("petBack").onclick=()=>{buildHome();show("home")};
+document.getElementById("whoBtn").onclick=()=>{buildWho();show("who")};
 function readyCheck(p){
   if(p.food<15)return "Too hungry! Feed them first.";
   if(p.water<15)return "Too thirsty! Give them water first.";
@@ -852,6 +904,7 @@ let last=performance.now(),T=0;
 function frame(now){
   const dt=Math.min(0.05,(now-last)/1000);last=now;T+=dt;S.t=T;
   if(view==="play"&&S.a){if(S.state==="play"&&S.mode!=="forge")update(dt);updateFx(dt);draw();hud();}
+  else if(view==="who")drawWho();
   else if(view==="home")drawPortraits(T);
   else if(view==="pet")drawPetScene(T);
   requestAnimationFrame(frame);
@@ -872,17 +925,21 @@ Sync=(()=>{
   const b64e=s=>{let x="";new TextEncoder().encode(s).forEach(c=>x+=String.fromCharCode(c));return btoa(x)};
   function merge(R){
     R=R||{};let changed=false,push=false;
-    const rp=R.pets||{};
-    ORDER.forEach(k=>{
-      const L=D.pets[k],r=rp[k];
-      if(r&&(r.u||0)>(L.u||0)){D.pets[k]=Object.assign({},r);changed=true;}
-      else if(!r||(L.u||0)>(r.u||0))push=true;
+    let rps=R.players;
+    if(!rps){rps={};if(R.pets)rps.dad=R.pets?{pets:R.pets,unlocked:R.unlocked,best:R.best}:null;push=true;}
+    PLAYERS.forEach(pl=>{
+      const P=ALL.players[pl.id],RP=rps[pl.id]||{},rp=RP.pets||{};
+      ORDER.forEach(k=>{
+        const L=P.pets[k],r=rp[k];
+        if(r&&(r.u||0)>(L.u||0)){P.pets[k]=Object.assign({},r);changed=true;}
+        else if(!r||(L.u||0)>(r.u||0))push=true;
+      });
+      const ru=RP.unlocked||1;
+      if(ru>P.unlocked){P.unlocked=ru;changed=true}else if(P.unlocked>ru)push=true;
+      const rb=RP.best||{};
+      for(const id in rb)if(rb[id]>(P.best[id]??-1)){P.best[id]=rb[id];changed=true}
+      for(const id in P.best)if(P.best[id]>(rb[id]??-1))push=true;
     });
-    const ru=R.unlocked||1;
-    if(ru>D.unlocked){D.unlocked=ru;changed=true}else if(D.unlocked>ru)push=true;
-    const rb=R.best||{};
-    for(const id in rb)if(rb[id]>(D.best[id]??-1)){D.best[id]=rb[id];changed=true}
-    for(const id in D.best)if(D.best[id]>(rb[id]??-1))push=true;
     return {changed,push};
   }
   async function pull(){
@@ -893,7 +950,7 @@ Sync=(()=>{
     return {data,sha:j.sha};
   }
   async function push(sha){
-    const out={pets:D.pets,unlocked:D.unlocked,best:D.best};
+    const out={players:ALL.players};
     const body={message:"sync",content:b64e(JSON.stringify(out)),branch:GH.branch};if(sha)body.sha=sha;
     const r=await fetch(API,{method:"PUT",headers:Object.assign(hdr(),{"Content-Type":"application/json"}),body:JSON.stringify(body)});
     if(r.status===409||r.status===422)return false;
@@ -909,7 +966,7 @@ Sync=(()=>{
       let ok=false;
       for(let i=0;i<4&&!ok;i++){
         const {data,sha}=await pull();const m=merge(data);
-        if(m.changed){try{localStorage.setItem(SKEY,JSON.stringify(D))}catch(e){}decayAll();refreshView();}
+        if(m.changed){try{localStorage.setItem(SKEY,JSON.stringify(ALL))}catch(e){}decayAll();refreshView();}
         ok=!m.push||await push(sha);
       }
       if(borrowed){LSs("wildrun.ghtoken",token);borrowed=false;}
@@ -921,7 +978,7 @@ Sync=(()=>{
     busy=false;if(again){again=false;run()}
   }
   function refreshView(){
-    if(view==="home")buildHome();else if(view==="pet")renderPet();else if(view==="map")buildMap();
+    if(view==="who")buildWho();else if(view==="home")buildHome();else if(view==="pet")renderPet();else if(view==="map")buildMap();
   }
   function soon(){if(!token)return;clearTimeout(timer);timer=setTimeout(run,1500)}
   function ago(){const s=Math.round((Date.now()-lastOk)/1000);return s<20?"just now":s<3600?Math.round(s/60)+" min ago":"a while ago"}
@@ -979,7 +1036,7 @@ document.addEventListener("dblclick",e=>e.preventDefault(),{passive:false});
 ["gesturestart","gesturechange"].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
 document.addEventListener("contextmenu",e=>{if(e.target.tagName!=="INPUT")e.preventDefault()});
 document.addEventListener("selectstart",e=>{if(e.target.tagName!=="INPUT")e.preventDefault()});
-loadSave();buildHome();Sync.paint();Sync.run();requestAnimationFrame(frame);
+loadSave();buildWho();show("who");Sync.paint();Sync.run();requestAnimationFrame(frame);
 </script>
 </body>
 </html>
